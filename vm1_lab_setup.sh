@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Lab 2 + Lab 3 setup script for VM1 (server + etcd + gRPC)
 # - Installs system dependencies (Python, etcd, tooling)
-# - Sets up Python virtualenv and installs pip packages
+# - Installs Python 3.10 system-wide (side-by-side) and required pip packages
 # - Optionally generates gRPC Python code from proto/monitor.proto
 # - Creates a systemd unit to run the monitoring gRPC server
 #
@@ -17,10 +17,10 @@ set -euo pipefail
 
 GRPC_PORT="${GRPC_PORT:-50051}"
 ETCD_PORT="${ETCD_PORT:-2379}"
+PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3.10}"
 
 # Resolve project root to directory containing this script
 APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY_ENV_DIR="${PY_ENV_DIR:-${APP_ROOT}/.venv}"
 SYSTEMD_UNIT="${SYSTEMD_UNIT:-/etc/systemd/system/monitor-server.service}"
 PROFILE_SNIPPET="${PROFILE_SNIPPET:-/etc/profile.d/monitor-lab.sh}"
 
@@ -49,34 +49,42 @@ install_deps() {
   info "Updating apt and installing dependencies..."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
+  apt-get install -y --no-install-recommends software-properties-common
+  if ! apt-cache policy | grep -q deadsnakes; then
+    info "Adding deadsnakes PPA for Python 3.10..."
+    add-apt-repository -y ppa:deadsnakes/ppa
+  fi
+  apt-get update -y
   apt-get install -y --no-install-recommends \
-    build-essential pkg-config python3-dev \
-    python3 python3-venv python3-pip \
+    build-essential pkg-config \
+    python3-pip \
+    python3.10 python3.10-dev python3.10-distutils python3.10-venv \
     git tmux \
     etcd-server \
     sysstat ifstat \
     ufw ca-certificates curl
 }
 
-create_venv_and_install() {
-  if [[ ! -d "${PY_ENV_DIR}" ]]; then
-    info "Creating Python virtualenv at ${PY_ENV_DIR}..."
-    python3 -m venv "${PY_ENV_DIR}"
-  else
-    info "Using existing virtualenv at ${PY_ENV_DIR}"
+ensure_python310() {
+  if [[ ! -x "${PYTHON_BIN}" ]]; then
+    err "Python 3.10 binary not found at ${PYTHON_BIN}."
+    exit 1
   fi
 
-  # shellcheck disable=SC1090
-  source "${PY_ENV_DIR}/bin/activate"
+  update-alternatives --install /usr/bin/python3 python3 "${PYTHON_BIN}" 2
+  update-alternatives --set python3 "${PYTHON_BIN}"
 
-  pip install --upgrade pip setuptools wheel
+  info "Ensuring pip for ${PYTHON_BIN}..."
+  "${PYTHON_BIN}" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  "${PYTHON_BIN}" -m pip install --upgrade pip setuptools wheel --break-system-packages
 
   if [[ -f "${APP_ROOT}/requirements.txt" ]]; then
     info "Installing Python packages from requirements.txt..."
-    pip install -r "${APP_ROOT}/requirements.txt"
+    "${PYTHON_BIN}" -m pip install --break-system-packages -r "${APP_ROOT}/requirements.txt"
   else
     info "requirements.txt not found, installing minimal required packages..."
-    pip install "protobuf==3.20.3" "grpcio==1.48.2" "grpcio-tools==1.48.2" etcd3
+    "${PYTHON_BIN}" -m pip install --break-system-packages \
+      "protobuf==3.20.3" "grpcio==1.48.2" "grpcio-tools==1.48.2" etcd3 psutil
   fi
 }
 
@@ -91,10 +99,7 @@ generate_proto_if_present() {
   info "Generating gRPC Python code from ${proto_file}..."
   mkdir -p "${APP_ROOT}/server" "${APP_ROOT}/agent"
 
-  # shellcheck disable=SC1090
-  source "${PY_ENV_DIR}/bin/activate"
-
-  python -m grpc_tools.protoc \
+  "${PYTHON_BIN}" -m grpc_tools.protoc \
     -I "${APP_ROOT}/proto" \
     --python_out="${APP_ROOT}/server" \
     --grpc_python_out="${APP_ROOT}/server" \
@@ -105,7 +110,7 @@ install_profile_snippet() {
   cat > "${PROFILE_SNIPPET}" <<EOF
 # Convenience env for Lab 2/3 monitor project
 export MONITOR_LAB_ROOT=${APP_ROOT}
-export PATH=\$PATH:${PY_ENV_DIR}/bin
+export PYTHON_BIN=${PYTHON_BIN}
 EOF
 }
 
@@ -127,7 +132,7 @@ Wants=network-online.target etcd.service
 Type=simple
 WorkingDirectory=${APP_ROOT}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=${PY_ENV_DIR}/bin/python -m server.server_main --bind ${this_ip}:${GRPC_PORT}
+ExecStart=${PYTHON_BIN} -m server.server_main --bind ${this_ip}:${GRPC_PORT}
 Restart=on-failure
 RestartSec=5
 
@@ -158,7 +163,7 @@ show_current() {
 
   echo "================ CURRENT CONFIG (VM1 LAB) ================"
   echo "APP_ROOT:          ${APP_ROOT}"
-  echo "PY_ENV_DIR:        ${PY_ENV_DIR}"
+  echo "PYTHON_BIN:        ${PYTHON_BIN}"
   echo "THIS_IP:           ${this_ip}"
   echo "GRPC_PORT:         ${GRPC_PORT}"
   echo "ETCD_PORT:         ${ETCD_PORT}"
@@ -177,7 +182,7 @@ main() {
   fi
 
   install_deps
-  create_venv_and_install
+  ensure_python310
   install_profile_snippet
 
   # etcd-server is typically packaged as 'etcd' service on Ubuntu
@@ -203,7 +208,7 @@ main() {
   echo
   echo "==================== SUMMARY (VM1 LAB) ==================="
   echo "APP_ROOT:          ${APP_ROOT}"
-  echo "PY_ENV_DIR:        ${PY_ENV_DIR}"
+  echo "PYTHON_BIN:        ${PYTHON_BIN}"
   echo "THIS_IP:           ${this_ip}"
   echo "GRPC_PORT:         ${GRPC_PORT}"
   echo "ETCD_PORT:         ${ETCD_PORT}"
