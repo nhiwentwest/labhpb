@@ -50,6 +50,7 @@ install_deps() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
   apt-get install -y --no-install-recommends \
+    build-essential pkg-config python3-dev \
     python3 python3-venv python3-pip \
     git tmux \
     etcd-server \
