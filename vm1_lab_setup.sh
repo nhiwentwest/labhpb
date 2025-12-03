@@ -76,7 +76,8 @@ ensure_python310() {
 
   info "Ensuring pip for ${PYTHON_BIN}..."
   "${PYTHON_BIN}" -m ensurepip --upgrade >/dev/null 2>&1 || true
-  "${PYTHON_BIN}" -m pip install --upgrade pip setuptools wheel --break-system-packages
+  "${PYTHON_BIN}" -m pip install --upgrade pip setuptools --break-system-packages
+  "${PYTHON_BIN}" -m pip install --upgrade wheel --break-system-packages --no-cache-dir --ignore-installed wheel
 
   if [[ -f "${APP_ROOT}/requirements.txt" ]]; then
     info "Installing Python packages from requirements.txt..."
