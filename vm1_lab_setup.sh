@@ -51,8 +51,8 @@ install_deps() {
   apt-get update -y
   apt-get install -y --no-install-recommends software-properties-common
   if ! apt-cache policy | grep -q deadsnakes; then
-    info "Adding deadsnakes PPA for Python 3.10..."
-    add-apt-repository -y ppa:deadsnakes/ppa
+info "Adding deadsnakes PPA for Python 3.10..."
+add-apt-repository -y ppa:deadsnakes/ppa
   fi
   apt-get update -y
   apt-get install -y --no-install-recommends \
@@ -71,16 +71,13 @@ ensure_python310() {
     exit 1
   fi
 
-  update-alternatives --install /usr/bin/python3 python3 "${PYTHON_BIN}" 2
-  update-alternatives --set python3 "${PYTHON_BIN}"
-
-  info "Ensuring pip for ${PYTHON_BIN}..."
+  info "Ensuring pip for ${PYTHON_BIN} (without touching system python3)..."
   "${PYTHON_BIN}" -m ensurepip --upgrade >/dev/null 2>&1 || true
   "${PYTHON_BIN}" -m pip install --upgrade pip setuptools --break-system-packages
   "${PYTHON_BIN}" -m pip install --upgrade wheel --break-system-packages --no-cache-dir --ignore-installed wheel
 
   if [[ -f "${APP_ROOT}/requirements.txt" ]]; then
-    info "Installing Python packages from requirements.txt..."
+    info "Installing Python packages from requirements.txt with ${PYTHON_BIN}..."
     "${PYTHON_BIN}" -m pip install --break-system-packages -r "${APP_ROOT}/requirements.txt"
   else
     info "requirements.txt not found, installing minimal required packages..."
